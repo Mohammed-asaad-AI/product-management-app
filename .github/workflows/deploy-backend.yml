@@ -1,0 +1,99 @@
+name: Deploy Backend to Azure App Service
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: 'productmgmt-api-123456'  # Replace with your actual app name
+  AZURE_WEBAPP_PACKAGE_PATH: './backend'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Create and activate virtual environment
+      run: |
+        cd ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+        python -m venv venv
+        source venv/bin/activate
+        
+    - name: Install dependencies
+      run: |
+        cd ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run tests (optional)
+      run: |
+        cd ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+        source venv/bin/activate
+        # Add your test commands here
+        # python -m pytest tests/
+        echo "Tests would run here"
+        
+    - name: Create deployment package
+      run: |
+        cd ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+        # Remove virtual environment from deployment package
+        rm -rf venv
+        # Create a zip file for deployment
+        zip -r ../backend-deployment.zip . -x "*.git*" "*.pyc" "__pycache__/*" "tests/*"
+        
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Deploy to Azure App Service
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        package: './backend-deployment.zip'
+        
+    - name: Test deployment
+      run: |
+        # Wait for deployment to complete
+        sleep 30
+        
+        # Test health endpoint
+        HEALTH_URL="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/health"
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL || echo "000")
+        
+        if [ "$HTTP_STATUS" = "200" ]; then
+          echo "✅ Backend deployment successful - Health check passed"
+        else
+          echo "❌ Backend deployment failed - Health check returned status: $HTTP_STATUS"
+          exit 1
+        fi
+        
+    - name: Deployment Summary
+      if: success()
+      run: |
+        echo "🎉 Backend Deployment Successful!"
+        echo ""
+        echo "📋 Deployment Details:"
+        echo "   • App Service: ${{ env.AZURE_WEBAPP_NAME }}"
+        echo "   • Python Version: ${{ env.PYTHON_VERSION }}"
+        echo ""
+        echo "🌐 API Endpoints:"
+        echo "   • Health: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/health"
+        echo "   • Products: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/products"
+        echo ""
+        echo "✅ Deployment completed at $(date)"
+

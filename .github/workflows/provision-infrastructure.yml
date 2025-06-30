@@ -1,0 +1,204 @@
+name: Provision Azure Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      app_service_sku:
+        description: 'App Service Plan SKU'
+        required: true
+        default: 'B1'
+        type: choice
+        options:
+        - F1
+        - B1
+        - B2
+        - S1
+        - S2
+        - P1v2
+      sql_database_sku:
+        description: 'SQL Database SKU'
+        required: true
+        default: 'Basic'
+        type: choice
+        options:
+        - Basic
+        - S0
+        - S1
+        - S2
+        - P1
+        - P2
+
+env:
+  AZURE_RESOURCE_GROUP: product-management-rg
+  LOCATION: "East US"
+
+jobs:
+  provision-infrastructure:
+    runs-on: ubuntu-latest
+    
+    outputs:
+      web-app-name: ${{ steps.deploy-infrastructure.outputs.web-app-name }}
+      static-web-app-name: ${{ steps.deploy-infrastructure.outputs.static-web-app-name }}
+      sql-server-name: ${{ steps.deploy-infrastructure.outputs.sql-server-name }}
+      connection-string: ${{ steps.deploy-infrastructure.outputs.connection-string }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Create Resource Group
+      run: |
+        echo "Creating resource group: ${{ env.AZURE_RESOURCE_GROUP }}"
+        az group create \
+          --name ${{ env.AZURE_RESOURCE_GROUP }} \
+          --location "${{ env.LOCATION }}" \
+          --output table
+          
+    - name: Validate ARM Template
+      run: |
+        echo "Validating ARM template..."
+        az deployment group validate \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --template-file azure-templates/main.json \
+          --parameters projectName=productmgmt \
+                      sqlAdministratorLogin=sqladmin \
+                      sqlAdministratorPassword="${{ secrets.SQL_ADMIN_PASSWORD }}" \
+                      appServicePlanSku="${{ github.event.inputs.app_service_sku }}" \
+                      sqlDatabaseSku="${{ github.event.inputs.sql_database_sku }}" \
+          --output table
+          
+    - name: Deploy Infrastructure
+      id: deploy-infrastructure
+      run: |
+        echo "Deploying infrastructure..."
+        
+        # Deploy ARM template
+        DEPLOYMENT_OUTPUT=$(az deployment group create \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --name "infrastructure-deployment-$(date +%Y%m%d-%H%M%S)" \
+          --template-file azure-templates/main.json \
+          --parameters projectName=productmgmt \
+                      sqlAdministratorLogin=sqladmin \
+                      sqlAdministratorPassword="${{ secrets.SQL_ADMIN_PASSWORD }}" \
+                      appServicePlanSku="${{ github.event.inputs.app_service_sku }}" \
+                      sqlDatabaseSku="${{ github.event.inputs.sql_database_sku }}" \
+          --output json)
+        
+        # Extract outputs
+        WEB_APP_NAME=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.webAppName.value')
+        STATIC_WEB_APP_NAME=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.staticWebAppName.value')
+        SQL_SERVER_NAME=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.sqlServerName.value')
+        CONNECTION_STRING=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.connectionString.value')
+        WEB_APP_URL=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.webAppUrl.value')
+        
+        # Set outputs
+        echo "web-app-name=$WEB_APP_NAME" >> $GITHUB_OUTPUT
+        echo "static-web-app-name=$STATIC_WEB_APP_NAME" >> $GITHUB_OUTPUT
+        echo "sql-server-name=$SQL_SERVER_NAME" >> $GITHUB_OUTPUT
+        echo "connection-string=$CONNECTION_STRING" >> $GITHUB_OUTPUT
+        
+        echo "Infrastructure deployed successfully!"
+        echo "Web App: $WEB_APP_NAME"
+        echo "Static Web App: $STATIC_WEB_APP_NAME"
+        echo "SQL Server: $SQL_SERVER_NAME"
+        echo "Web App URL: $WEB_APP_URL"
+        
+    - name: Configure App Service Settings
+      run: |
+        WEB_APP_NAME="${{ steps.deploy-infrastructure.outputs.web-app-name }}"
+        CONNECTION_STRING="${{ steps.deploy-infrastructure.outputs.connection-string }}"
+        
+        echo "Configuring App Service settings..."
+        
+        # Set application settings
+        az webapp config appsettings set \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --name $WEB_APP_NAME \
+          --settings \
+            FLASK_ENV=production \
+            DATABASE_URL="$CONNECTION_STRING" \
+            SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+          --output table
+          
+    - name: Get Static Web App Deployment Token
+      id: get-swa-token
+      run: |
+        STATIC_WEB_APP_NAME="${{ steps.deploy-infrastructure.outputs.static-web-app-name }}"
+        
+        # Get the deployment token for Static Web Apps
+        SWA_TOKEN=$(az staticwebapp secrets list \
+          --name $STATIC_WEB_APP_NAME \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query 'properties.apiKey' \
+          --output tsv)
+        
+        echo "swa-token=$SWA_TOKEN" >> $GITHUB_OUTPUT
+        echo "Static Web App deployment token retrieved"
+        
+    - name: Save Deployment Outputs
+      run: |
+        # Create deployment outputs file
+        cat > deployment-outputs.json << EOF
+        {
+          "environment": "${{ github.event.inputs.environment }}",
+          "resourceGroup": "${{ env.AZURE_RESOURCE_GROUP }}",
+          "location": "${{ env.LOCATION }}",
+          "webAppName": "${{ steps.deploy-infrastructure.outputs.web-app-name }}",
+          "staticWebAppName": "${{ steps.deploy-infrastructure.outputs.static-web-app-name }}",
+          "sqlServerName": "${{ steps.deploy-infrastructure.outputs.sql-server-name }}",
+          "connectionString": "${{ steps.deploy-infrastructure.outputs.connection-string }}",
+          "deploymentTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        
+        echo "Deployment outputs saved to deployment-outputs.json"
+        
+    - name: Upload Deployment Outputs
+      uses: actions/upload-artifact@v3
+      with:
+        name: deployment-outputs
+        path: deployment-outputs.json
+        
+    - name: Infrastructure Summary
+      run: |
+        WEB_APP_NAME="${{ steps.deploy-infrastructure.outputs.web-app-name }}"
+        STATIC_WEB_APP_NAME="${{ steps.deploy-infrastructure.outputs.static-web-app-name }}"
+        SQL_SERVER_NAME="${{ steps.deploy-infrastructure.outputs.sql-server-name }}"
+        
+        echo "🎉 Infrastructure Provisioning Completed!"
+        echo ""
+        echo "📋 Infrastructure Details:"
+        echo "   • Environment: ${{ github.event.inputs.environment }}"
+        echo "   • Resource Group: ${{ env.AZURE_RESOURCE_GROUP }}"
+        echo "   • Location: ${{ env.LOCATION }}"
+        echo "   • App Service SKU: ${{ github.event.inputs.app_service_sku }}"
+        echo "   • SQL Database SKU: ${{ github.event.inputs.sql_database_sku }}"
+        echo ""
+        echo "🚀 Created Resources:"
+        echo "   • App Service: $WEB_APP_NAME"
+        echo "   • Static Web App: $STATIC_WEB_APP_NAME"
+        echo "   • SQL Server: $SQL_SERVER_NAME"
+        echo ""
+        echo "🔧 Next Steps:"
+        echo "   1. Update GitHub Secrets with the following:"
+        echo "      • AZURE_WEBAPP_NAME: $WEB_APP_NAME"
+        echo "      • AZURE_STATIC_WEB_APPS_API_TOKEN: (from Static Web App)"
+        echo "   2. Run backend deployment workflow"
+        echo "   3. Run frontend deployment workflow"
+        echo ""
+        echo "⚠️  Important: Make sure to update your GitHub repository secrets!"
+
