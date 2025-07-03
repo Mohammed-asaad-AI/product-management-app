@@ -11,7 +11,7 @@
     },
     "location": {
       "type": "string",
-      "defaultValue": "[resourceGroup().location]",
+      "defaultValue": "West US",
       "metadata": {
         "description": "Location for all resources"
       }
@@ -73,13 +73,7 @@
       "type": "Microsoft.Sql/servers",
       "apiVersion": "2021-11-01",
       "name": "[variables('sqlServerName')]",
-"location": {
-  "type": "string",
-  "defaultValue": "West US 2",
-  "metadata": {
-    "description": "Location for all resources"
-  }
-} 
+
      "properties": {
         "administratorLogin": "[parameters('sqlAdministratorLogin')]",
         "administratorLoginPassword": "[parameters('sqlAdministratorPassword')]",
