@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 RESOURCE_GROUP_NAME="product-management-rg"
-LOCATION="East US"
+LOCATION="West US"
 DEPLOYMENT_NAME="product-management-deployment"
 TEMPLATE_FILE="azure-templates/main.json"
 PARAMETERS_FILE="azure-templates/parameters.json"

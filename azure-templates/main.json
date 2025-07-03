@@ -73,8 +73,14 @@
       "type": "Microsoft.Sql/servers",
       "apiVersion": "2021-11-01",
       "name": "[variables('sqlServerName')]",
-      "location": "[parameters('location')]",
-      "properties": {
+"location": {
+  "type": "string",
+  "defaultValue": "West US 2",
+  "metadata": {
+    "description": "Location for all resources"
+  }
+} 
+     "properties": {
         "administratorLogin": "[parameters('sqlAdministratorLogin')]",
         "administratorLoginPassword": "[parameters('sqlAdministratorPassword')]",
         "version": "12.0",
@@ -184,7 +190,7 @@
         "tier": "Free"
       },
       "properties": {
-        "repositoryUrl": "",
+        "repositoryUrl": "https://github.com/Mohammed-asaad-AI/product-management-app",
         "branch": "main",
         "buildProperties": {
           "appLocation": "/frontend",

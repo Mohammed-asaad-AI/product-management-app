@@ -5,6 +5,9 @@
     "projectName": {
       "value": "productmgmt"
     },
+    "location": {
+      "value": "East US 2"
+    },
     "sqlAdministratorLogin": {
       "value": "sqladmin"
     },
