@@ -73,6 +73,7 @@
       "type": "Microsoft.Sql/servers",
       "apiVersion": "2021-11-01",
       "name": "[variables('sqlServerName')]",
+"location": "[parameters('location')]",
 
      "properties": {
         "administratorLogin": "[parameters('sqlAdministratorLogin')]",
