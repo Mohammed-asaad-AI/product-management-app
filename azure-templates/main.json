@@ -178,7 +178,7 @@
       "type": "Microsoft.Web/staticSites",
       "apiVersion": "2022-03-01",
       "name": "[variables('staticWebAppName')]",
-      "location": "East US 2",
+"location": "[parameters('location')]" ,
       "sku": {
         "name": "Free",
         "tier": "Free"
