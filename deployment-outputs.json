@@ -1,0 +1,10 @@
+{
+  "resourceGroup": "product-management-rg",
+  "location": "East US 2",
+  "sqlServerName": "productmgmt-sql-g2n43c",
+  "sqlDatabaseName": "productmgmt-db",
+  "webAppName": "productmgmt-api-g2n43c",
+  "webAppUrl": "https://productmgmt-api-g2n43c.azurewebsites.net",
+  "staticWebAppName": "productmgmt-frontend-g2n43c",
+  "connectionString": "Server=tcp:productmgmt-sql-g2n43c.database.windows.net,1433;Initial Catalog=productmgmt-db;Persist Security Info=False;User ID=sqladmin;Password=YourSecurePassword123!;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+}
